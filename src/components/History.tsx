@@ -1,79 +1,62 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { Download, Clock, Music, Loader2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-interface Track {
-  id: string;
-  file_name: string;
-  created_at: string;
-  storage_path: string;
-}
+import { deleteTrack, downloadTrack, listTracks, TrackRecord } from '../lib/dataService';
 
 export function History({ accentClass }: { accentClass: string }) {
-  const [history, setHistory] = useState<Track[]>([]);
+  const [history, setHistory] = useState<TrackRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchHistory();
+    const refresh = () => fetchHistory();
+    window.addEventListener('trackmaster:tracks-changed', refresh);
+    return () => window.removeEventListener('trackmaster:tracks-changed', refresh);
   }, []);
 
   const fetchHistory = async () => {
-    const { data, error } = await supabase
-      .from('tracks')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (!error && data) setHistory(data);
-    setLoading(false);
-  };
-
-  const downloadFile = async (track: Track) => {
-    setProcessingId(track.id);
     try {
-      const { data, error } = await supabase.storage
-        .from('audio-files')
-        .download(track.storage_path);
-        
-      if (error) throw error;
-      
-      const url = URL.createObjectURL(data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Mastered_${track.file_name}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const { tracks } = await listTracks();
+      setHistory(tracks);
+      setError(null);
     } catch (err) {
-      console.error("Cloud download failed", err);
+      console.error("Failed to fetch local mastering logs", err);
+      setError('Local logs are unavailable until the garage API is running.');
     } finally {
-      setProcessingId(null);
+      setLoading(false);
     }
   };
 
-  const deleteTrack = async (track: Track) => {
-    if (!confirm(`Permanently delete "${track.file_name}" from cloud storage?`)) return;
+  const downloadFile = (track: TrackRecord) => {
+    setProcessingId(track.id);
+    void (async () => {
+      try {
+        const blob = await downloadTrack(track.id);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Mastered_${track.fileName}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error("Download failed", err);
+        setError('Download is unavailable for this local track.');
+      } finally {
+        setProcessingId(null);
+      }
+    })();
+  };
+
+  const handleDeleteTrack = async (track: TrackRecord) => {
+    if (!confirm(`Permanently delete "${track.fileName}" from local storage?`)) return;
     
     setProcessingId(track.id);
     try {
-      // 1. Delete from Storage Bucket
-      const { error: storageError } = await supabase.storage
-        .from('audio-files')
-        .remove([track.storage_path]);
-
-      if (storageError) throw storageError;
-
-      // 2. Delete from Database Table
-      const { error: dbError } = await supabase
-        .from('tracks')
-        .delete()
-        .eq('id', track.id);
-
-      if (dbError) throw dbError;
-
-      // 3. Update UI
+      await deleteTrack(track.id);
       setHistory(prev => prev.filter(t => t.id !== track.id));
     } catch (err) {
       console.error("Deletion failed", err);
@@ -94,6 +77,12 @@ export function History({ accentClass }: { accentClass: string }) {
 
   return (
     <div className="space-y-2">
+      {error && (
+        <div className="rounded-sm border border-amber-500/20 bg-amber-500/10 p-3 text-[9px] font-mono uppercase tracking-wider text-amber-100/80">
+          {error}
+        </div>
+      )}
+
       <AnimatePresence initial={false}>
         {history.map((track) => (
           <motion.div 
@@ -107,12 +96,12 @@ export function History({ accentClass }: { accentClass: string }) {
               <Music size={14} className={`${accentClass} opacity-50 group-hover:opacity-100 transition-opacity`} />
               <div className="overflow-hidden">
                 <p className="text-[10px] font-mono font-bold text-zinc-300 truncate max-w-[120px] uppercase tracking-wider">
-                  {track.file_name}
+                  {track.fileName}
                 </p>
                 <div className="flex items-center gap-2 opacity-40">
                   <Clock size={10} />
                   <span className="text-[8px] font-mono">
-                    {new Date(track.created_at).toLocaleDateString()}
+                    {new Date(track.createdAt).toLocaleDateString()}
                   </span>
                 </div>
               </div>
@@ -133,10 +122,10 @@ export function History({ accentClass }: { accentClass: string }) {
               </button>
 
               <button 
-                onClick={() => deleteTrack(track)}
+                onClick={() => handleDeleteTrack(track)}
                 disabled={!!processingId}
                 className="p-2 hover:bg-red-500/10 rounded-sm transition-all group/trash"
-                title="Delete from Cloud"
+                title="Delete from local storage"
               >
                 <Trash2 size={14} className="text-zinc-600 group-hover/trash:text-red-500" />
               </button>
@@ -146,9 +135,12 @@ export function History({ accentClass }: { accentClass: string }) {
       </AnimatePresence>
       
       {history.length === 0 && (
-        <div className="text-center py-10 space-y-2 opacity-20">
+        <div className="text-center py-10 space-y-2 opacity-40">
           <Music size={24} className="mx-auto" />
           <p className="text-[9px] font-mono uppercase tracking-[0.2em]">No Logs Detected</p>
+          <p className="mx-auto max-w-[180px] text-[8px] font-mono uppercase tracking-wider text-zinc-500">
+            Export a track to create a local mastering log.
+          </p>
         </div>
       )}
     </div>

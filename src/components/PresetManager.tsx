@@ -3,7 +3,7 @@ import { Save, Trash2, ChevronDown, Check, Cloud } from 'lucide-react';
 import { Preset, DEFAULT_PRESETS } from '../utils/presets';
 import { MasteringParams } from '../hooks/useAudioEngine';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase } from '../lib/supabase';
+import { createPreset, deletePreset, listPresets } from '../lib/dataService';
 
 interface PresetManagerProps {
   currentParams: MasteringParams;
@@ -19,48 +19,28 @@ export function PresetManager({ currentParams, onLoadPreset, accentClass, accent
   const [newPresetName, setNewPresetName] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [storageAvailable, setStorageAvailable] = useState(true);
   
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 1. Fetch presets from Supabase on mount
   useEffect(() => {
     fetchCustomPresets();
   }, []);
 
   const fetchCustomPresets = async () => {
     try {
-      const { data, error } = await supabase
-        .from('presets')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      if (data) {
-        const formattedCustoms: Preset[] = data.map((p) => ({
-          id: p.id,
-          name: p.name,
-          isCustom: true,
-          params: {
-            eqLow: p.eq_low,
-            eqMid: p.eq_mid,
-            eqHigh: p.eq_high,
-            compThreshold: p.comp_threshold,
-            compRatio: p.comp_ratio,
-            makeupGain: p.makeup_gain,
-            delayTime: p.delay_time,
-            delayFeedback: p.delay_feedback,
-            delayMix: p.delay_mix,
-            reverbDecay: p.reverb_decay,
-            reverbMix: p.reverb_mix,
-            saturationDrive: p.saturation_drive,
-            saturationMix: p.saturation_mix,
-          },
-        }));
-        setPresets([...DEFAULT_PRESETS, ...formattedCustoms]);
-      }
+      const { presets } = await listPresets();
+      const formattedCustoms: Preset[] = presets.map((p) => ({
+        id: p.id,
+        name: p.name,
+        isCustom: p.isCustom ?? true,
+        params: p.params,
+      }));
+      setPresets([...DEFAULT_PRESETS, ...formattedCustoms]);
+      setStorageAvailable(true);
     } catch (e) {
-      console.error('Failed to fetch presets from Supabase', e);
+      console.error('Failed to fetch user presets', e);
+      setStorageAvailable(false);
     }
   };
 
@@ -79,66 +59,37 @@ export function PresetManager({ currentParams, onLoadPreset, accentClass, accent
     setTimeout(() => setFeedbackMessage(null), 3000);
   };
 
-  // 2. Save new preset to Supabase
   const handleSave = async () => {
     if (!newPresetName.trim()) return;
 
-    // Note: If you disabled RLS as suggested, we don't strictly need the user ID, 
-    // but we'll try to get it anyway for good practice.
-    const { data: { user } } = await supabase.auth.getUser();
-
     try {
-      const { data, error } = await supabase
-        .from('presets')
-        .insert([
-          {
-            user_id: user?.id || null, // Allow null if RLS is disabled
-            name: newPresetName.trim(),
-            eq_low: currentParams.eqLow,
-            eq_mid: currentParams.eqMid,
-            eq_high: currentParams.eqHigh,
-            comp_threshold: currentParams.compThreshold,
-            comp_ratio: currentParams.compRatio,
-            makeup_gain: currentParams.makeupGain,
-            delay_time: currentParams.delayTime,
-            delay_feedback: currentParams.delayFeedback,
-            delay_mix: currentParams.delayMix,
-            reverb_decay: currentParams.reverbDecay,
-            reverb_mix: currentParams.reverbMix,
-            saturation_drive: currentParams.saturationDrive,
-            saturation_mix: currentParams.saturationMix,
-          },
-        ])
-        .select();
-
-      if (error) throw error;
-
+      const { preset } = await createPreset(newPresetName.trim(), currentParams);
       await fetchCustomPresets();
-      if (data) setSelectedId(data[0].id);
+      setSelectedId(preset.id);
       
       setNewPresetName('');
       setIsSaving(false);
-      showFeedback('Cloud Sync: OK');
+      showFeedback('Preset Saved');
     } catch (e) {
       console.error('Error saving preset', e);
-      showFeedback('Sync Error');
+      setStorageAvailable(false);
+      showFeedback('Save Error');
     }
   };
 
-  // 3. Delete preset from Supabase
   const handleDelete = async (id: string) => {
     try {
-      const { error } = await supabase.from('presets').delete().eq('id', id);
-      if (error) throw error;
+      await deletePreset(id);
 
       setPresets(prev => prev.filter(p => p.id !== id));
       if (selectedId === id) {
         setSelectedId('default');
         onLoadPreset(DEFAULT_PRESETS[0].params);
       }
-      showFeedback('Removed from Cloud');
+      showFeedback('Preset Removed');
     } catch (e) {
       console.error('Error deleting preset', e);
+      showFeedback('Delete Error');
     }
   };
 
@@ -223,7 +174,7 @@ export function PresetManager({ currentParams, onLoadPreset, accentClass, accent
                     {presets.some(p => p.isCustom) && (
                       <>
                         <div className="px-3 py-1.5 mt-2 text-[10px] font-bold text-zinc-500 font-mono uppercase tracking-widest border-t border-zinc-800/50 pt-3 flex items-center gap-2">
-                          <Cloud size={10} /> User Cloud Presets
+                          <Cloud size={10} /> User Presets
                         </div>
                         {presets.filter(p => p.isCustom).map(p => (
                           <div key={p.id} className="group flex items-center relative">
@@ -255,9 +206,10 @@ export function PresetManager({ currentParams, onLoadPreset, accentClass, accent
           </div>
 
           <button
-            onClick={() => setIsSaving(true)}
-            className="p-1.5 rounded-sm bg-gradient-to-b from-zinc-700 to-zinc-800 border border-zinc-700 text-zinc-300 hover:text-zinc-100 hover:from-zinc-600 hover:to-zinc-700 transition-colors shadow-lg active:translate-y-[1px]"
-            title="Save current settings to Supabase"
+            onClick={() => storageAvailable && setIsSaving(true)}
+            disabled={!storageAvailable}
+            className="p-1.5 rounded-sm bg-gradient-to-b from-zinc-700 to-zinc-800 border border-zinc-700 text-zinc-300 hover:text-zinc-100 hover:from-zinc-600 hover:to-zinc-700 disabled:opacity-40 disabled:hover:text-zinc-300 disabled:hover:from-zinc-700 disabled:hover:to-zinc-800 transition-colors shadow-lg active:translate-y-[1px]"
+            title={storageAvailable ? 'Save current settings' : 'Preset storage unavailable'}
           >
             <Save size={16} />
           </button>

@@ -1,0 +1,23 @@
+[Unit]
+Description=AIBRY TrackMaster API Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/podman run --rm --replace \
+  --name trackmaster-api \
+  --network host \
+  --env-file /home/aibry/projects/aibry-trackmaster/.env \
+  --env NODE_ENV=production \
+  --env PORT=3004 \
+  --env TRACKMASTER_HOST=127.0.0.1 \
+  --env TRACKMASTER_DATA_DIR=/app/data \
+  --env TRACKMASTER_UPLOAD_LIMIT=120mb \
+  --volume /home/aibry/projects/aibry-trackmaster/data:/app/data:Z \
+  localhost/aibry-trackmaster-api:latest
+ExecStop=/usr/bin/podman stop -t 10 trackmaster-api
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

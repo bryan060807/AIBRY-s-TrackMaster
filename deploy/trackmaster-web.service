@@ -1,0 +1,17 @@
+[Unit]
+Description=AIBRY TrackMaster Web Service
+After=network.target trackmaster-api.service
+Requires=trackmaster-api.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/podman run --rm --replace \
+  --name trackmaster-ui \
+  --network host \
+  localhost/aibry-trackmaster-ui:latest
+ExecStop=/usr/bin/podman stop -t 10 trackmaster-ui
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

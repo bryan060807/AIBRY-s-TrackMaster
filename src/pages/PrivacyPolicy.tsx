@@ -29,14 +29,14 @@ export const PrivacyPolicy = () => {
           <div className="rack-panel p-8 relative border border-zinc-800 bg-[#111] print:bg-transparent print:border-black print:p-4">
             <h2 className="text-white text-xs font-bold uppercase mb-4 tracking-widest print:text-black">// 01_DATA_ENCRYPTION</h2>
             <p className="text-[12px] leading-relaxed">
-              AIBRY TrackMaster utilizes Google OAuth for secure authentication. We only access your primary email address and basic profile information to initialize your private mastering session.
+              AIBRY TrackMaster uses local account authentication for access control. Account credentials are stored on the garage server and audio processing occurs in the browser.
             </p>
           </div>
 
           <div className="rack-panel p-8 relative border border-zinc-800 bg-[#111] print:bg-transparent print:border-black print:p-4">
             <h2 className="text-white text-xs font-bold uppercase mb-4 tracking-widest print:text-black">// 02_AUDIO_PROCESSING</h2>
             <p className="text-[12px] leading-relaxed">
-              All Digital Signal Processing (DSP) occurs locally. Uploaded audio is processed via the Web Audio API. Mastered exports are stored in your private Supabase bucket.
+              Digital Signal Processing occurs in the browser via the Web Audio API. Mastered exports are stored on the local garage server filesystem and indexed in a local SQLite database.
             </p>
           </div>
         </section>

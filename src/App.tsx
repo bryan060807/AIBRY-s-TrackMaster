@@ -1,20 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
-  Upload, Play, Pause, SkipBack, Download, Settings2, Sliders, 
+  Play, Pause, SkipBack, Download, Settings2, Sliders, 
   Activity, Waves, Repeat, Flame, Trash2, ListMusic, Clock, HelpCircle,
-  LogIn, LogOut, ShieldCheck
+  ShieldCheck
 } from 'lucide-react';
 import { useAudioEngine } from './hooks/useAudioEngine';
 import { Visualizer } from './components/Visualizer';
 import { PresetManager } from './components/PresetManager';
 import { ExportModal } from './components/ExportModal';
-import { Tooltip } from './components/Tooltip';
 import { History } from './components/History';
-import { OAuthConsent } from './components/OAuthConsent';
+import { AuthStatus } from './components/AuthStatus';
 import { AuthScreen } from './components/AuthScreen';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsOfService } from './pages/TermsOfService';
-import { supabase } from './lib/supabase';
+import { getAuthToken, getCurrentUser, login, logout, register, type AuthUser } from './lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 
 const THEMES = [
@@ -23,6 +22,20 @@ const THEMES = [
   { name: 'Green', value: '#22c55e', class: 'text-green-500', bg: 'bg-green-500' },
   { name: 'Cyan', value: '#06b6d4', class: 'text-cyan-400', bg: 'bg-cyan-400' },
 ];
+
+const THEME_STORAGE_KEY = 'trackmaster.theme';
+
+function getInitialTheme() {
+  if (typeof window === 'undefined') return THEMES[0];
+
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return THEMES.find(theme => theme.name === storedTheme) || THEMES[0];
+  } catch (err) {
+    console.warn('Failed to restore TrackMaster theme', err);
+    return THEMES[0];
+  }
+}
 
 function formatTime(seconds: number) {
   const mins = Math.floor(seconds / 60);
@@ -40,76 +53,122 @@ export default function App() {
   const {
     play, pause, stop, seek, exportTrack, addToQueue, removeFromQueue,
     isPlaying, currentTime, duration, params, setParams, analyser,
-    hasAudio, isExporting, queue, currentIndex
+    audioReady, hasAudio, isExporting, queue, currentIndex, audioError
   } = useAudioEngine();
 
-  const [accent, setAccent] = useState(THEMES[0]);
+  const [accent, setAccent] = useState(getInitialTheme);
   const [showExportModal, setShowExportModal] = useState(false);
   const [helpMode, setHelpMode] = useState(false);
-  const [session, setSession] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(Boolean(getAuthToken()));
+  const [authError, setAuthError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const path = window.location.pathname;
-
-  // AUTH SESSION LISTENER
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setAuthLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setAuthLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleLogin = async () => {
-    // HARDWARE HANDSHAKE: Logic for trackmaster.aibry.shop
-    const host = window.location.hostname;
-    let redirectUrl = 'https://trackmaster.aibry.shop/oauth/consent';
-
-    if (host === 'localhost') {
-      redirectUrl = 'http://localhost:3000/oauth/consent';
-    } else if (host.includes('vercel.app')) {
-      redirectUrl = 'https://aibry-trackmaster.vercel.app/oauth/consent';
-    }
-
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: redirectUrl }
-    });
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
+  const path = typeof window !== 'undefined' ? window.location.pathname : '/';
+  const audioInputBlocked = Boolean(audioError && (
+    audioError.includes('does not support the Web Audio API') ||
+    audioError.includes('blocked audio engine initialization') ||
+    audioError.includes('Audio engine is not ready') ||
+    audioError.includes('Audio controls could not be applied') ||
+    audioError.includes('Playback failed')
+  ));
+  const canUseAudio = !audioInputBlocked;
+  const canAddAudio = canUseAudio;
+  const canExport = hasAudio && !isExporting;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
+    if (canUseAudio && e.target.files && e.target.files.length > 0) {
       addToQueue(e.target.files);
     }
+    e.target.value = '';
   };
 
   const handleParamChange = (key: keyof typeof params, value: number) => {
     setParams(prev => ({ ...prev, [key]: value }));
   };
 
+  const handleThemeChange = (theme: typeof THEMES[number]) => {
+    setAccent(theme);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme.name);
+    } catch (err) {
+      console.warn('Failed to persist TrackMaster theme', err);
+    }
+  };
+
+  useEffect(() => {
+    if (!getAuthToken()) {
+      setAuthLoading(false);
+      return;
+    }
+
+    let active = true;
+    getCurrentUser()
+      .then(({ user }) => {
+        if (!active) return;
+        setAuthUser(user);
+        setAuthError(null);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error('Failed to restore TrackMaster session', err);
+        setAuthUser(null);
+        setAuthError('Session expired. Sign in again.');
+      })
+      .finally(() => {
+        if (active) setAuthLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleAuth = async (email: string, password: string, mode: 'login' | 'register') => {
+    setAuthLoading(true);
+    setAuthError(null);
+    try {
+      const { user } = mode === 'register'
+        ? await register(email, password)
+        : await login(email, password);
+      setAuthUser(user);
+    } catch (err) {
+      console.error('TrackMaster auth failed', err);
+      setAuthError(err instanceof Error ? err.message : 'Authentication failed.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    setAuthUser(null);
+    setAuthError(null);
+  };
+
   // ROUTING LOGIC
-  if (path === '/oauth/consent') return <OAuthConsent accentBg={accent.bg} accentClass={accent.class} />;
   if (path === '/privacy') return <PrivacyPolicy />;
   if (path === '/tos') return <TermsOfService />;
 
-  if (authLoading) return (
-    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-      <Activity size={32} className={`${accent.class} animate-spin`} />
-    </div>
-  );
+  if (authLoading && !authUser) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <Activity size={32} className={`${accent.class} animate-spin`} />
+      </div>
+    );
+  }
 
-  if (!session) return <AuthScreen onLogin={handleLogin} accentClass={accent.class} accentBg={accent.bg} />;
+  if (!authUser) {
+    return (
+      <AuthScreen
+        onLogin={handleAuth}
+        accentClass={accent.class}
+        accentBg={accent.bg}
+        loading={authLoading}
+        error={authError}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#111] text-zinc-100 font-sans flex flex-col selection:bg-zinc-800">
@@ -137,7 +196,7 @@ export default function App() {
                   <p className="text-zinc-300"><span className={accent.class}>[ 02 ] THE LIMITER:</span> Fixed ceiling at -0.1dB. Use 'Makeup Gain' in the Output panel to drive loudness.</p>
                 </div>
                 <div className="space-y-4 text-zinc-300">
-                  <p><span className={accent.class}>[ 03 ] LOGS & SYNC:</span> All mastered files are logged to your unique User ID for secure cross-device access.</p>
+                  <p><span className={accent.class}>[ 03 ] LOGS & SYNC:</span> Mastered files and presets are stored on the local garage server.</p>
                   <p className="opacity-50 italic mt-8">// CAUTION: High input drive may induce intended harmonic clipping.</p>
                 </div>
               </div>
@@ -157,29 +216,65 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="hidden lg:flex items-center gap-3 px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-sm">
-                <div className="text-right">
-                  <p className="text-[9px] font-mono text-zinc-500 uppercase leading-none mb-1">Authenticated</p>
-                  <p className="text-[10px] font-mono font-bold text-zinc-200 truncate max-w-[120px]">{session.user.email}</p>
-                </div>
-                <button onClick={handleLogout} className="p-1.5 text-zinc-500 hover:text-red-500 transition-colors"><LogOut size={16} /></button>
+            <div className="hidden lg:block">
+              <AuthStatus
+                accentClass={accent.class}
+                accentBg={accent.bg}
+                user={authUser}
+                onLogout={handleLogout}
+              />
             </div>
             <PresetManager currentParams={params} onLoadPreset={setParams} accentClass={accent.class} accentBg={accent.bg} />
-            <div className="hidden md:flex gap-2 bg-zinc-900 rounded-full p-1 border border-zinc-800">
+            <div className="hidden md:flex gap-2 bg-zinc-900 rounded-full p-1 border border-zinc-800" aria-label="Theme selector">
               {THEMES.map(t => (
-                <button key={t.name} onClick={() => setAccent(t)} className={`w-6 h-6 rounded-full transition-all ${accent.name === t.name ? 'ring-2 ring-zinc-400' : 'opacity-50 hover:opacity-100'}`} />
+                <button
+                  key={t.name}
+                  onClick={() => handleThemeChange(t)}
+                  className={`relative w-6 h-6 rounded-full border transition-all ${accent.name === t.name ? 'border-zinc-100 scale-110' : 'border-zinc-700 opacity-80 hover:opacity-100'}`}
+                  style={{
+                    backgroundColor: t.value,
+                    boxShadow: accent.name === t.name ? `0 0 0 2px #18181b, 0 0 12px ${t.value}` : 'inset 0 0 0 1px rgba(0,0,0,0.35)',
+                  }}
+                  title={`${t.name} theme`}
+                  aria-label={`${t.name} theme`}
+                  aria-pressed={accent.name === t.name}
+                >
+                  {accent.name === t.name && (
+                    <span className="absolute inset-1 rounded-full border border-black/40 bg-white/20" />
+                  )}
+                </button>
               ))}
             </div>
-            <button onClick={() => setShowExportModal(true)} disabled={!hasAudio || isExporting} className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium text-sm transition-all ${hasAudio && !isExporting ? `${accent.bg} text-zinc-950` : 'bg-zinc-800 text-zinc-500'}`}>
+            <button
+              onClick={() => canExport && setShowExportModal(true)}
+              disabled={!canExport}
+              title={hasAudio ? 'Export the loaded track' : 'Load a track before exporting'}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium text-sm transition-all ${canExport ? `${accent.bg} text-zinc-950` : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}
+            >
               {isExporting ? <Activity size={16} className="animate-spin" /> : <Download size={16} />}
               <span>Export Track</span>
             </button>
           </div>
         </div>
+        <div className="lg:hidden border-t border-zinc-900 px-4 py-3">
+          <AuthStatus
+            accentClass={accent.class}
+            accentBg={accent.bg}
+            user={authUser}
+            onLogout={handleLogout}
+          />
+        </div>
       </header>
 
       {/* 3. MAIN RACK */}
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-6 flex-grow">
+        {audioError && (
+          <div className="rack-panel border border-red-500/30 bg-red-500/10 p-4 font-mono text-xs text-red-100">
+            <p className="font-bold uppercase tracking-widest">Audio_Engine_Unavailable</p>
+            <p className="mt-2 text-[10px] uppercase tracking-wider text-red-100/70">{audioError}</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* SPECTRUM ANALYSIS */}
           <div className="lg:col-span-2 h-96 rack-panel p-4 flex flex-col relative overflow-hidden">
@@ -189,7 +284,7 @@ export default function App() {
               {hasAudio && <div className="font-mono text-[10px] text-zinc-400 bg-black border border-zinc-800 px-2 py-1 rounded-sm">{formatTime(currentTime)} / {formatTime(duration)}</div>}
             </div>
             <div className="flex-1 bg-black border-2 border-zinc-900 rounded-sm p-1 overflow-hidden shadow-inner">
-               <Visualizer analyser={analyser} isPlaying={isPlaying} accentColor={accent.value} />
+               <Visualizer analyser={analyser} isPlaying={isPlaying} accentColor={accent.value} hasAudio={hasAudio} />
             </div>
           </div>
 
@@ -198,10 +293,10 @@ export default function App() {
             <RackScrew className="top-2 left-2" /><RackScrew className="top-2 right-2" /><RackScrew className="bottom-2 left-2" /><RackScrew className="bottom-2 right-2" />
             <h2 className="text-xs font-bold font-mono text-zinc-400 uppercase tracking-widest mb-4">Transport</h2>
             <div className="space-y-4 mb-6">
-                <input type="range" min={0} max={duration || 100} value={currentTime} onChange={(e) => seek(parseFloat(e.target.value))} className="w-full fader" />
+                <input type="range" min={0} max={duration || 100} value={currentTime} disabled={!hasAudio} onChange={(e) => seek(parseFloat(e.target.value))} className="w-full fader" />
                 <div className="flex items-center justify-center gap-4">
-                    <button onClick={stop} className="p-2.5 rounded-sm border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-100 transition-colors"><SkipBack size={18} /></button>
-                    <button onClick={isPlaying ? pause : play} className={`p-4 rounded-sm border border-zinc-800 shadow-lg active:translate-y-[1px] transition-all ${hasAudio ? 'bg-zinc-800 text-zinc-100' : 'bg-zinc-900 text-zinc-600'}`}>
+                    <button onClick={stop} disabled={!hasAudio} className="p-2.5 rounded-sm border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-100 disabled:text-zinc-700 transition-colors"><SkipBack size={18} /></button>
+                    <button onClick={isPlaying ? pause : play} disabled={!hasAudio} className={`p-4 rounded-sm border border-zinc-800 shadow-lg active:translate-y-[1px] transition-all ${hasAudio ? 'bg-zinc-800 text-zinc-100' : 'bg-zinc-900 text-zinc-600'}`}>
                       {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-1" />}
                     </button>
                 </div>
@@ -210,15 +305,33 @@ export default function App() {
                <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[10px] font-bold font-mono text-zinc-400 uppercase flex items-center gap-2"><ListMusic size={12} className={accent.class} /> Queue ({queue.length})</h3>
                 <input type="file" multiple accept="audio/*" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
-                <button onClick={() => fileInputRef.current?.click()} className={`text-[9px] font-bold uppercase px-2 py-1 rounded-sm border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 transition-colors ${accent.class}`}>+ Add</button>
+                <button
+                  onClick={() => canAddAudio && fileInputRef.current?.click()}
+                  disabled={!canAddAudio}
+                  title={audioReady ? 'Add audio files' : 'Add audio files to start the audio engine'}
+                  className={`text-[9px] font-bold uppercase px-2 py-1 rounded-sm border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 disabled:text-zinc-600 disabled:hover:bg-zinc-800 disabled:cursor-not-allowed transition-colors ${accent.class}`}
+                >
+                  + Add
+                </button>
               </div>
               <div className="flex-1 overflow-y-auto custom-scrollbar">
                 {queue.map((file, idx) => (
                   <div key={idx} className={`p-2 rounded-sm border flex items-center justify-between mb-1 ${idx === currentIndex ? 'bg-black border-zinc-700' : 'bg-zinc-900/40 border-transparent'}`}>
                     <span className="text-[10px] font-mono truncate max-w-[120px]">{file.name}</span>
-                    <button onClick={() => removeFromQueue(idx)} className="p-1 text-zinc-600 hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
+                    <button
+                      onClick={() => removeFromQueue(idx)}
+                      title="Remove from queue"
+                      className="p-1 text-zinc-600 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </div>
                 ))}
+                {queue.length === 0 && (
+                  <div className="h-full flex items-center justify-center text-center opacity-30">
+                    <p className="text-[9px] font-mono uppercase tracking-[0.2em]">Drop in audio to begin</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -285,7 +398,7 @@ export default function App() {
         </div>
       </footer>
 
-      <ExportModal isOpen={showExportModal} onClose={() => setShowExportModal(false)} onExport={exportTrack} accentBg={accent.bg} accentClass={accent.class} isExporting={isExporting} />
+      <ExportModal isOpen={showExportModal} onClose={() => setShowExportModal(false)} onExport={exportTrack} accentBg={accent.bg} accentClass={accent.class} isExporting={isExporting} canExport={hasAudio} />
       
       {/* 6. HELP TOGGLE */}
       <button 

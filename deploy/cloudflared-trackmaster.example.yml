@@ -1,0 +1,7 @@
+# Example ingress snippet only. Do not store tunnel credentials in this repo.
+ingress:
+  - hostname: trackmaster.aibry.shop
+    service: http://127.0.0.1:3000
+  - hostname: trackmaster-api.aibry.shop
+    service: http://127.0.0.1:3004
+  - service: http_status:404

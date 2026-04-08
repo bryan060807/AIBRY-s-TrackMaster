@@ -1,0 +1,25 @@
+FROM docker.io/library/node:22-bookworm-slim AS deps
+
+WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+FROM docker.io/library/node:22-bookworm-slim
+
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=3004 \
+    TRACKMASTER_HOST=127.0.0.1 \
+    TRACKMASTER_DATA_DIR=/app/data \
+    TRACKMASTER_UPLOAD_LIMIT=120mb \
+    TRACKMASTER_JWT_EXPIRES_IN=12h
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
+COPY server ./server
+RUN mkdir -p /app/data/uploads
+
+EXPOSE 3004
+CMD ["node", "server/index.js"]

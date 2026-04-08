@@ -8,9 +8,10 @@ interface ExportModalProps {
   accentBg: string;
   accentClass: string;
   isExporting: boolean;
+  canExport: boolean;
 }
 
-export function ExportModal({ isOpen, onClose, onExport, accentBg, accentClass, isExporting }: ExportModalProps) {
+export function ExportModal({ isOpen, onClose, onExport, accentBg, accentClass, isExporting, canExport }: ExportModalProps) {
   const [format, setFormat] = useState<'wav' | 'mp3'>('wav');
   const [bitrate, setBitrate] = useState<number>(320);
 
@@ -77,8 +78,9 @@ export function ExportModal({ isOpen, onClose, onExport, accentBg, accentClass, 
             Cancel
           </button>
           <button
-            onClick={() => onExport(format, bitrate)}
-            disabled={isExporting}
+            onClick={() => canExport && onExport(format, bitrate)}
+            disabled={isExporting || !canExport}
+            title={canExport ? 'Render the loaded track' : 'Load a track before exporting'}
             className={`flex items-center gap-2 px-6 py-2 rounded-sm font-mono font-bold text-xs uppercase tracking-widest transition-all ${accentBg} text-black hover:opacity-90 disabled:opacity-50 shadow-[0_2px_5px_rgba(0,0,0,0.5)] active:shadow-none active:translate-y-[1px]`}
           >
             {isExporting ? 'Rendering...' : 'Render'}

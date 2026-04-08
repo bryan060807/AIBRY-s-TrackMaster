@@ -7,9 +7,10 @@ interface VisualizerProps {
   analyser: AnalyserNode | null;
   isPlaying: boolean;
   accentColor: string;
+  hasAudio: boolean;
 }
 
-export function Visualizer({ analyser, isPlaying, accentColor }: VisualizerProps) {
+export function Visualizer({ analyser, isPlaying, accentColor, hasAudio }: VisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const [mode, setMode] = useState<VisualizerMode>('spectrum');
@@ -167,6 +168,14 @@ export function Visualizer({ analyser, isPlaying, accentColor }: VisualizerProps
       <div className="absolute inset-0 pointer-events-none opacity-[0.03] z-20"
         style={{ backgroundImage: `linear-gradient(to right, #fff 1px, transparent 1px), linear-gradient(to bottom, #fff 1px, transparent 1px)`, backgroundSize: '40px 40px' }}
       />
+      {!hasAudio && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+          <div className="rounded-sm border border-zinc-800 bg-black/70 px-4 py-3 text-center font-mono shadow-2xl">
+            <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-zinc-400">Analyzer Idle</p>
+            <p className="mt-2 text-[9px] uppercase tracking-wider text-zinc-600">Add audio to start metering</p>
+          </div>
+        </div>
+      )}
       <div className="absolute top-2 right-2 flex gap-1 bg-zinc-900/90 border border-zinc-800 rounded p-1 opacity-0 group-hover:opacity-100 transition-opacity z-50">
         <button onClick={() => setMode('spectrum')} className={`p-1.5 rounded ${mode === 'spectrum' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}><BarChart2 size={16} /></button>
         <button onClick={() => setMode('waveform')} className={`p-1.5 rounded ${mode === 'waveform' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}><Activity size={16} /></button>

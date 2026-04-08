@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { audioBufferToWav, audioBufferToMp3 } from '../utils/exportUtils';
-import { supabase } from '../lib/supabase';
+import { uploadTrack } from '../lib/dataService';
 
 export interface MasteringParams {
   eqLow: number;
@@ -67,6 +67,7 @@ export function useAudioEngine() {
   const [params, setParams] = useState<MasteringParams>(DEFAULT_PARAMS);
   const [isExporting, setIsExporting] = useState(false);
   const [fileName, setFileName] = useState<string>('mastered_track');
+  const [audioError, setAudioError] = useState<string | null>(null);
 
   const [queue, setQueue] = useState<File[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
@@ -93,13 +94,39 @@ export function useAudioEngine() {
   const makeupGainRef = useRef<GainNode | null>(null);
   const limiterRef = useRef<DynamicsCompressorNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   
   const startTimeRef = useRef(0);
   const pauseTimeRef = useRef(0);
   const animationFrameRef = useRef<number>(0);
 
-  useEffect(() => {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const initializeAudioEngine = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume().catch((err) => {
+          console.warn('Audio context resume was blocked', err);
+        });
+      }
+      return audioContextRef.current;
+    }
+
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextCtor) {
+      setAudioError('This browser does not support the Web Audio API.');
+      return;
+    }
+
+    let ctx: AudioContext;
+    try {
+      ctx = new AudioContextCtor();
+    } catch (err) {
+      console.error('Failed to initialize audio engine', err);
+      setAudioError('The browser blocked audio engine initialization. Try a current desktop browser.');
+      return;
+    }
+
+    audioContextRef.current = ctx;
     setAudioContext(ctx);
     
     const inputNode = ctx.createGain();
@@ -153,30 +180,53 @@ export function useAudioEngine() {
     limiterRef.current = limiter; analyserRef.current = analyser;
 
     convolverNode.buffer = generateImpulseResponse(ctx, DEFAULT_PARAMS.reverbDecay, 2);
-    return () => { ctx.close(); };
+    setAudioError(null);
+    return ctx;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const ctx = audioContextRef.current;
+      try {
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        if (sourceNodeRef.current) {
+          sourceNodeRef.current.onended = null;
+          sourceNodeRef.current.stop();
+          sourceNodeRef.current.disconnect();
+        }
+        if (ctx && ctx.state !== 'closed') void ctx.close();
+      } catch (err) {
+        console.warn('Audio engine cleanup failed', err);
+      }
+    };
   }, []);
 
   useEffect(() => {
     if (!audioContext) return;
-    if (saturationNodeRef.current) saturationNodeRef.current.curve = makeDistortionCurve(params.saturationDrive);
-    if (saturationDryGainRef.current) saturationDryGainRef.current.gain.value = 1 - params.saturationMix;
-    if (saturationWetGainRef.current) saturationWetGainRef.current.gain.value = params.saturationMix;
-    if (eqLowRef.current) eqLowRef.current.gain.value = params.eqLow;
-    if (eqMidRef.current) eqMidRef.current.gain.value = params.eqMid;
-    if (eqHighRef.current) eqHighRef.current.gain.value = params.eqHigh;
-    if (delayNodeRef.current) delayNodeRef.current.delayTime.value = params.delayTime;
-    if (feedbackGainRef.current) feedbackGainRef.current.gain.value = params.delayFeedback;
-    if (delayWetGainRef.current) delayWetGainRef.current.gain.value = params.delayMix;
-    if (reverbWetGainRef.current) reverbWetGainRef.current.gain.value = params.reverbMix;
-    if (convolverNodeRef.current && prevReverbDecayRef.current !== params.reverbDecay) {
-      convolverNodeRef.current.buffer = generateImpulseResponse(audioContext, params.reverbDecay, 2);
-      prevReverbDecayRef.current = params.reverbDecay;
+    try {
+      if (saturationNodeRef.current) saturationNodeRef.current.curve = makeDistortionCurve(params.saturationDrive);
+      if (saturationDryGainRef.current) saturationDryGainRef.current.gain.value = 1 - params.saturationMix;
+      if (saturationWetGainRef.current) saturationWetGainRef.current.gain.value = params.saturationMix;
+      if (eqLowRef.current) eqLowRef.current.gain.value = params.eqLow;
+      if (eqMidRef.current) eqMidRef.current.gain.value = params.eqMid;
+      if (eqHighRef.current) eqHighRef.current.gain.value = params.eqHigh;
+      if (delayNodeRef.current) delayNodeRef.current.delayTime.value = params.delayTime;
+      if (feedbackGainRef.current) feedbackGainRef.current.gain.value = params.delayFeedback;
+      if (delayWetGainRef.current) delayWetGainRef.current.gain.value = params.delayMix;
+      if (reverbWetGainRef.current) reverbWetGainRef.current.gain.value = params.reverbMix;
+      if (convolverNodeRef.current && prevReverbDecayRef.current !== params.reverbDecay) {
+        convolverNodeRef.current.buffer = generateImpulseResponse(audioContext, params.reverbDecay, 2);
+        prevReverbDecayRef.current = params.reverbDecay;
+      }
+      if (compressorRef.current) {
+        compressorRef.current.threshold.value = params.compThreshold;
+        compressorRef.current.ratio.value = params.compRatio;
+      }
+      if (makeupGainRef.current) makeupGainRef.current.gain.value = Math.pow(10, params.makeupGain / 20);
+    } catch (err) {
+      console.error('Failed to update audio parameters', err);
+      setAudioError('Audio controls could not be applied in this browser session.');
     }
-    if (compressorRef.current) {
-      compressorRef.current.threshold.value = params.compThreshold;
-      compressorRef.current.ratio.value = params.compRatio;
-    }
-    if (makeupGainRef.current) makeupGainRef.current.gain.value = Math.pow(10, params.makeupGain / 20);
   }, [params, audioContext]);
 
   const updateProgress = useCallback(() => {
@@ -189,10 +239,14 @@ export function useAudioEngine() {
       return;
     }
     setCurrentTime(time);
-    animationFrameRef.current = requestAnimationFrame(updateProgress);
+    if (typeof window !== 'undefined') {
+      animationFrameRef.current = requestAnimationFrame(updateProgress);
+    }
   }, [audioContext, isPlaying, duration]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     if (isPlaying) {
       animationFrameRef.current = requestAnimationFrame(updateProgress);
     } else {
@@ -201,13 +255,25 @@ export function useAudioEngine() {
     return () => cancelAnimationFrame(animationFrameRef.current);
   }, [isPlaying, updateProgress]);
 
-  const addToQueue = (files: FileList) => {
-    const newFiles = Array.from(files);
-    setQueue(prev => [...prev, ...newFiles]);
-    if (currentIndex === -1) {
-      setCurrentIndex(0);
-      loadAudio(newFiles[0]);
+  const addToQueue = async (files: FileList) => {
+    const ctx = await initializeAudioEngine();
+    if (!ctx) {
+      setAudioError(prev => prev || 'Audio engine could not be started.');
+      return;
     }
+
+    const newFiles = Array.from(files);
+    if (newFiles.length === 0) return;
+
+    if (currentIndex === -1) {
+      const loaded = await loadAudio(newFiles[0], ctx);
+      if (!loaded) return;
+      setQueue(prev => [...prev, ...newFiles]);
+      setCurrentIndex(0);
+      return;
+    }
+
+    setQueue(prev => [...prev, ...newFiles]);
   };
 
   const removeFromQueue = (index: number) => {
@@ -223,54 +289,90 @@ export function useAudioEngine() {
     });
   };
 
-  const loadAudio = async (file: File) => {
-    if (!audioContext) return;
-    stop();
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = await audioContext.decodeAudioData(arrayBuffer);
-    setAudioBuffer(buffer);
-    setDuration(buffer.duration);
-    setCurrentTime(0);
-    pauseTimeRef.current = 0;
-    setFileName(file.name.replace(/\.[^/.]+$/, ""));
+  const loadAudio = async (file: File, ctx = audioContextRef.current): Promise<boolean> => {
+    if (!ctx) {
+      setAudioError('Audio engine is not ready yet.');
+      return false;
+    }
+
+    try {
+      stop();
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = await ctx.decodeAudioData(arrayBuffer);
+      setAudioBuffer(buffer);
+      setDuration(buffer.duration);
+      setCurrentTime(0);
+      pauseTimeRef.current = 0;
+      setFileName(file.name.replace(/\.[^/.]+$/, ""));
+      setAudioError(null);
+      return true;
+    } catch (err) {
+      console.error('Failed to load audio file', err);
+      setAudioBuffer(null);
+      setDuration(0);
+      setCurrentTime(0);
+      setAudioError('That file could not be decoded as browser-supported audio.');
+      return false;
+    }
   };
 
-  const play = () => {
-    if (!audioContext || !audioBuffer || !inputNodeRef.current) return;
-    if (audioContext.state === 'suspended') audioContext.resume();
+  const play = async () => {
+    const ctx = await initializeAudioEngine();
+    if (!ctx || !audioBuffer || !inputNodeRef.current) return;
 
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(inputNodeRef.current);
-    
-    source.onended = () => {
-      if (sourceNodeRef.current === source) {
-        setIsPlaying(false);
-        if (currentIndex !== -1 && currentIndex < queue.length - 1) {
-          const nextIdx = currentIndex + 1;
-          setCurrentIndex(nextIdx);
-          loadAudio(queue[nextIdx]).then(() => play());
+    try {
+      if (ctx.state === 'suspended') await ctx.resume();
+
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(inputNodeRef.current);
+      
+      source.onended = () => {
+        if (sourceNodeRef.current === source) {
+          setIsPlaying(false);
+          if (currentIndex !== -1 && currentIndex < queue.length - 1) {
+            const nextIdx = currentIndex + 1;
+            setCurrentIndex(nextIdx);
+            void loadAudio(queue[nextIdx]);
+          }
         }
-      }
-    };
+      };
 
-    source.start(0, pauseTimeRef.current);
-    startTimeRef.current = audioContext.currentTime - pauseTimeRef.current;
-    sourceNodeRef.current = source;
-    setIsPlaying(true);
+      source.start(0, pauseTimeRef.current);
+      startTimeRef.current = ctx.currentTime - pauseTimeRef.current;
+      sourceNodeRef.current = source;
+      setIsPlaying(true);
+    } catch (err) {
+      console.error('Playback failed', err);
+      setIsPlaying(false);
+      setAudioError('Playback failed. Try reloading the audio file.');
+    }
   };
 
   const pause = () => {
-    if (!audioContext || !sourceNodeRef.current) return;
-    sourceNodeRef.current.stop();
-    pauseTimeRef.current = audioContext.currentTime - startTimeRef.current;
-    setIsPlaying(false);
+    const ctx = audioContextRef.current;
+    if (!ctx || !sourceNodeRef.current) return;
+    try {
+      sourceNodeRef.current.stop();
+      pauseTimeRef.current = ctx.currentTime - startTimeRef.current;
+    } catch (err) {
+      console.warn('Pause failed', err);
+    } finally {
+      setIsPlaying(false);
+    }
   };
 
   const stop = () => {
     if (sourceNodeRef.current) {
-      sourceNodeRef.current.stop();
-      sourceNodeRef.current.disconnect();
+      try {
+        sourceNodeRef.current.onended = null;
+        sourceNodeRef.current.stop();
+        sourceNodeRef.current.disconnect();
+      } catch (err) {
+        console.warn('Stop failed', err);
+      } finally {
+        sourceNodeRef.current = null;
+      }
     }
     setIsPlaying(false);
     pauseTimeRef.current = 0;
@@ -282,13 +384,17 @@ export function useAudioEngine() {
     if (wasPlaying) stop();
     pauseTimeRef.current = time;
     setCurrentTime(time);
-    if (wasPlaying) play();
+    if (wasPlaying) void play();
   };
 
   const exportTrack = async (format: 'wav' | 'mp3' = 'wav', bitrate: number = 320) => {
     if (!audioBuffer) return;
     setIsExporting(true);
     try {
+      if (typeof OfflineAudioContext === 'undefined') {
+        throw new Error('Offline rendering is not supported in this browser.');
+      }
+
       const offlineCtx = new OfflineAudioContext(audioBuffer.numberOfChannels, audioBuffer.length, audioBuffer.sampleRate);
       const source = offlineCtx.createBufferSource();
       source.buffer = audioBuffer;
@@ -340,25 +446,19 @@ export function useAudioEngine() {
       URL.revokeObjectURL(url);
 
       try {
-        const { data: userData } = await supabase.auth.getUser();
-        const storagePath = `${userData.user?.id || 'public'}/${Date.now()}_${fileName}.${format}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage.from('audio-files').upload(storagePath, blob);
-
-        if (!uploadError && uploadData) {
-          await supabase.from('tracks').insert([{
-            user_id: userData.user?.id || null,
-            file_name: fileName,
-            storage_path: uploadData.path,
-            status: 'mastered',
-            duration_seconds: audioBuffer.duration
-          }]);
-        }
-      } catch (dbError) {
-        console.warn("Cloud backup failed, but local download succeeded.", dbError);
+        await uploadTrack(blob, {
+          fileName,
+          format,
+          durationSeconds: audioBuffer.duration,
+        });
+        window.dispatchEvent(new CustomEvent('trackmaster:tracks-changed'));
+      } catch (storageError) {
+        console.warn("Local backup failed, but local download succeeded.", storageError);
       }
 
     } catch (err) {
       console.error("Export failed", err);
+      setAudioError(err instanceof Error ? err.message : 'Export failed.');
     } finally {
       setIsExporting(false);
     }
@@ -369,7 +469,8 @@ export function useAudioEngine() {
     addToQueue, removeFromQueue,
     isPlaying, currentTime, duration, params, setParams,
     analyser: analyserRef.current,
+    audioReady: !!audioContext,
     hasAudio: !!audioBuffer,
-    isExporting, fileName, queue, currentIndex
+    isExporting, fileName, queue, currentIndex, audioError
   };
 }
