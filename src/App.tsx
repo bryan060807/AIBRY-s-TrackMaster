@@ -13,7 +13,7 @@ import { AuthStatus } from './components/AuthStatus';
 import { AuthScreen } from './components/AuthScreen';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsOfService } from './pages/TermsOfService';
-import { getAuthToken, getCurrentUser, login, logout, register, type AuthUser } from './lib/api';
+import { getCurrentUser, login, logout, register, type AuthUser } from './lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 
 const THEMES = [
@@ -60,7 +60,7 @@ export default function App() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [helpMode, setHelpMode] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [authLoading, setAuthLoading] = useState(Boolean(getAuthToken()));
+  const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -97,11 +97,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!getAuthToken()) {
-      setAuthLoading(false);
-      return;
-    }
-
     let active = true;
     getCurrentUser()
       .then(({ user }) => {
@@ -111,9 +106,9 @@ export default function App() {
       })
       .catch((err) => {
         if (!active) return;
-        console.error('Failed to restore TrackMaster session', err);
+        console.info('No active TrackMaster session restored', err);
         setAuthUser(null);
-        setAuthError('Session expired. Sign in again.');
+        setAuthError(null);
       })
       .finally(() => {
         if (active) setAuthLoading(false);
@@ -141,7 +136,9 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    logout();
+    void logout().catch((err) => {
+      console.warn('TrackMaster logout request failed', err);
+    });
     setAuthUser(null);
     setAuthError(null);
   };

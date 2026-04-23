@@ -11,6 +11,20 @@ This app deploys as an authenticated garage-native split service:
 - Cloudflare Tunnel: `trackmaster.aibry.shop` to `http://127.0.0.1:3000`
 - Cloudflare Tunnel: `trackmaster-api.aibry.shop` to `http://127.0.0.1:3004`
 
+This is the live deployment model. Windows PM2 files in the repository are
+readiness-only and must not replace the Fedora Podman/systemd/nginx runtime
+unless the separate Fedora cutover runbook is explicitly approved.
+
+Required repository source for this deployment shape:
+
+- root `server/` compatibility entrypoint
+- root frontend source under `src/`
+- `trackmaster-api/` API source tree copied into the API container
+
+`trackmaster-ui/` is also required source in the repo during the split because
+the current root UI re-exports shared API/session client code from it, even
+though the live frontend build still starts from root `src/`.
+
 ## Build
 
 ```bash
@@ -42,6 +56,7 @@ systemctl --user enable --now trackmaster-web.service
 systemctl --user status trackmaster-api.service
 systemctl --user status trackmaster-web.service
 curl -fsS http://127.0.0.1:3004/api/health
+curl -fsS http://127.0.0.1:3004/api/readiness
 curl -i http://127.0.0.1:3004/api/tracks
 curl -I http://127.0.0.1:3000/
 ```

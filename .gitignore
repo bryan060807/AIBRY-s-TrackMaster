@@ -1,8 +1,13 @@
+# Generated and local runtime artifacts only.
+# Required source trees such as `trackmaster-api/`, `trackmaster-ui/`, `docs/`,
+# and `scripts/` are intentionally tracked.
 node_modules/
 build/
 dist/
 coverage/
 data/
+data-windows-readiness/
+trackmaster-api/reports/
 .DS_Store
 *.log
 .env*

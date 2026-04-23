@@ -6,11 +6,19 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "dev:api": "node server/index.js",
-    "check:api": "node --check server/index.js",
+    "dev:api:split": "npm --prefix trackmaster-api run dev",
+    "start:windows-readiness": "powershell -ExecutionPolicy Bypass -File scripts/start-windows-readiness.ps1",
+    "check:api": "node --check server/index.js && npm --prefix trackmaster-api run check",
+    "test:api": "npm --prefix trackmaster-api test",
+    "pm2:windows-readiness:start": "pm2 start ecosystem.windows-readiness.config.cjs --update-env",
+    "pm2:windows-readiness:stop": "pm2 stop trackmaster-windows-readiness-api",
+    "pm2:windows-readiness:delete": "pm2 delete trackmaster-windows-readiness-api",
+    "pm2:windows-readiness:status": "pm2 status trackmaster-windows-readiness-api",
+    "pm2:windows-readiness:logs": "pm2 logs trackmaster-windows-readiness-api --lines 80",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
-    "lint": "tsc --noEmit && node --check server/index.js"
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
+    "lint": "tsc --noEmit && npm run check:api"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

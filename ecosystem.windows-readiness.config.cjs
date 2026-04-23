@@ -1,0 +1,32 @@
+module.exports = {
+  apps: [
+    {
+      name: 'trackmaster-windows-readiness-api',
+      cwd: __dirname,
+      script: 'server/index.js',
+      interpreter: 'node',
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      autorestart: false,
+      max_memory_restart: '300M',
+      env: {
+        NODE_ENV: 'development',
+        PORT: '3104',
+        TRACKMASTER_HOST: '127.0.0.1',
+        TRACKMASTER_DATA_DIR: './data-windows-readiness',
+        TRACKMASTER_REPOSITORY_BACKEND: 'sqlite',
+        TRACKMASTER_JWT_SECRET: 'trackmaster-windows-readiness-local-secret',
+        TRACKMASTER_JWT_EXPIRES_IN: '12h',
+        TRACKMASTER_SESSION_COOKIE: 'tm_session_windows_readiness',
+        TRACKMASTER_SESSION_EXPIRES_IN_SECONDS: '43200',
+        TRACKMASTER_API_RATE_WINDOW_MS: '60000',
+        TRACKMASTER_API_RATE_LIMIT: '240',
+        TRACKMASTER_AUTH_RATE_WINDOW_MS: '900000',
+        TRACKMASTER_AUTH_RATE_LIMIT: '20',
+        TRACKMASTER_UPLOAD_LIMIT: '120mb',
+        CORS_ORIGIN: 'http://127.0.0.1:3000',
+      },
+    },
+  ],
+};

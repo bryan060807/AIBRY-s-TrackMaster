@@ -1,0 +1,26 @@
+{
+  "name": "trackmaster-api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check scripts/validate-postgres-runtime.js && node --check scripts/generate-migration-readiness-report.js",
+    "test": "node test/config.test.js && node test/server.runtime.test.js && node test/readiness-report.test.js && node test/api.integration.test.js && node test/repositories.test.js && node test/postgres.repositories.test.js",
+    "test:postgres": "node test/postgres.repositories.test.js",
+    "test:postgres:api-imported": "node test/postgres.imported.api.test.js",
+    "migrate:sqlite-to-postgres": "node scripts/sqlite-to-postgres.js",
+    "rehearse:postgres-migration": "node scripts/rehearse-postgres-migration.js",
+    "report:migration-readiness": "node scripts/generate-migration-readiness-report.js",
+    "validate:postgres-runtime": "node scripts/validate-postgres-runtime.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.8.0",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.3.2",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.20.0"
+  }
+}
