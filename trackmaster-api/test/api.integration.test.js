@@ -87,6 +87,16 @@ test('login issues a cookie session and JWT fallback remains valid after cookie 
   assert.equal(jwtSession.body.authMode, 'jwt-bearer');
 });
 
+test('AIBRY ID routes are mounted at app-origin and api-origin paths but disabled by default', async () => {
+  const browserLogin = await request('/auth/aibry-id/login');
+  assert.equal(browserLogin.response.status, 404);
+  assert.equal(browserLogin.body.error, 'aibry_id_disabled');
+
+  const apiLogin = await request('/api/auth/aibry-id/login');
+  assert.equal(apiLogin.response.status, 404);
+  assert.deepEqual(apiLogin.body, browserLogin.body);
+});
+
 test('preset CRUD works through repository-backed routes', async () => {
   const { cookie } = await registerUser('presets@example.com');
 

@@ -160,6 +160,7 @@ export function createAuth({ config, repositories }) {
 
   return {
     authenticate,
+    buildSessionCookie,
     clearSessionCookie,
     createSession,
     revokeSessionToken,

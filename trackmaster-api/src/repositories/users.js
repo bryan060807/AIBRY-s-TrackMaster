@@ -33,5 +33,14 @@ export function createUsersRepository(db) {
       `).get(id);
       return mapUserRow(row);
     },
+
+    findPublicByEmail(email) {
+      const row = db.prepare(`
+        SELECT id, email, created_at
+        FROM users
+        WHERE email = ?
+      `).get(email);
+      return mapUserRow(row);
+    },
   };
 }

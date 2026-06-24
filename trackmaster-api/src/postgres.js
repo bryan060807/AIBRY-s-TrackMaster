@@ -48,7 +48,7 @@ export async function applyPostgresMigrations(pool, { migrationsDir = defaultMig
 
 export async function resetPostgresSchemaForTests(pool) {
   await pool.query(`
-    DROP TABLE IF EXISTS tracks, presets, sessions, users CASCADE;
+    DROP TABLE IF EXISTS external_identities, tracks, presets, sessions, users CASCADE;
     DROP FUNCTION IF EXISTS set_updated_at() CASCADE;
   `);
 }

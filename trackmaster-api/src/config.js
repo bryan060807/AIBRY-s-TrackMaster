@@ -14,6 +14,19 @@ function parsePositiveInteger(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseBooleanFlag(value, fallback) {
+  if (value == null || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  throw new Error(`Invalid boolean flag value "${value}". Expected "true" or "false".`);
+}
+
+function normalizeString(value, fallback) {
+  if (value == null || value === '') return fallback;
+  return String(value).trim();
+}
+
 function parseSessionSeconds(value) {
   const parsed = Number.parseInt(value || '43200', 10);
   return Number.isFinite(parsed) ? Math.max(300, parsed) : 43200;
@@ -32,6 +45,81 @@ function parseRepositoryBackend(value) {
   return backend;
 }
 
+function isLoopbackHost(hostname) {
+  const normalized = String(hostname || '').toLowerCase();
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1' || normalized === '[::1]';
+}
+
+function parseUrl(value, fieldName) {
+  try {
+    return new URL(value);
+  } catch (_err) {
+    throw new Error(`${fieldName} must be a valid URL.`);
+  }
+}
+
+function validatePublicUrl(value, fieldName, { allowRelativeSameOrigin = false } = {}) {
+  if (allowRelativeSameOrigin && String(value).startsWith('/')) return;
+
+  const parsed = parseUrl(value, fieldName);
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`${fieldName} must use HTTPS when TRACKMASTER_AIBRY_ID_DEV_ONLY=false.`);
+  }
+  if (isLoopbackHost(parsed.hostname)) {
+    throw new Error(`${fieldName} must not use a loopback host when TRACKMASTER_AIBRY_ID_DEV_ONLY=false.`);
+  }
+}
+
+function hasExplicitValue(env, key) {
+  return env[key] != null && String(env[key]).trim() !== '';
+}
+
+function requireExplicitPublicValue(env, key) {
+  if (!hasExplicitValue(env, key)) {
+    throw new Error(`${key} is required when TRACKMASTER_AIBRY_ID_DEV_ONLY=false.`);
+  }
+}
+
+function resolveAibryIdConfig(env, { jwtSecret }) {
+  const enabled = parseBooleanFlag(env.TRACKMASTER_AIBRY_ID_ENABLED, false);
+  const devOnly = parseBooleanFlag(env.TRACKMASTER_AIBRY_ID_DEV_ONLY, true);
+  const config = {
+    enabled,
+    devOnly,
+    issuer: normalizeString(env.TRACKMASTER_AIBRY_ID_ISSUER, 'http://127.0.0.1:4010'),
+    clientId: normalizeString(env.TRACKMASTER_AIBRY_ID_CLIENT_ID, 'trackmaster-private-loopback'),
+    redirectUri: normalizeString(
+      env.TRACKMASTER_AIBRY_ID_REDIRECT_URI,
+      'http://127.0.0.1:3000/auth/aibry-id/callback',
+    ),
+    scopes: normalizeString(env.TRACKMASTER_AIBRY_ID_SCOPES, 'openid profile email'),
+    successRedirect: normalizeString(env.TRACKMASTER_AIBRY_ID_SUCCESS_REDIRECT, '/'),
+    linkRequiredRedirect: normalizeString(env.TRACKMASTER_AIBRY_ID_LINK_REQUIRED_REDIRECT, ''),
+    selfProvisioning: parseBooleanFlag(env.TRACKMASTER_AIBRY_ID_SELF_PROVISIONING, false),
+    stateCookieSecret: normalizeString(env.TRACKMASTER_AIBRY_ID_STATE_COOKIE_SECRET, jwtSecret || ''),
+  };
+
+  if (!enabled) return config;
+
+  if (!config.stateCookieSecret) {
+    throw new Error('TRACKMASTER_AIBRY_ID_STATE_COOKIE_SECRET is required when TRACKMASTER_AIBRY_ID_ENABLED=true unless TRACKMASTER_JWT_SECRET is set.');
+  }
+
+  if (!devOnly) {
+    requireExplicitPublicValue(env, 'TRACKMASTER_AIBRY_ID_ISSUER');
+    requireExplicitPublicValue(env, 'TRACKMASTER_AIBRY_ID_CLIENT_ID');
+    requireExplicitPublicValue(env, 'TRACKMASTER_AIBRY_ID_REDIRECT_URI');
+    requireExplicitPublicValue(env, 'TRACKMASTER_AIBRY_ID_SUCCESS_REDIRECT');
+    validatePublicUrl(config.issuer, 'TRACKMASTER_AIBRY_ID_ISSUER');
+    validatePublicUrl(config.redirectUri, 'TRACKMASTER_AIBRY_ID_REDIRECT_URI');
+    validatePublicUrl(config.successRedirect, 'TRACKMASTER_AIBRY_ID_SUCCESS_REDIRECT', {
+      allowRelativeSameOrigin: true,
+    });
+  }
+
+  return config;
+}
+
 export function loadConfig(env = process.env) {
   const port = parsePort(env.PORT, 3004);
   const host = env.TRACKMASTER_HOST || '127.0.0.1';
@@ -42,6 +130,7 @@ export function loadConfig(env = process.env) {
   const postgresUrl = env.TRACKMASTER_POSTGRES_URL || '';
   const jwtSecret = env.TRACKMASTER_JWT_SECRET || '';
   const production = env.NODE_ENV === 'production';
+  const aibryId = resolveAibryIdConfig(env, { jwtSecret });
 
   if (repositoryBackend === 'postgres' && !postgresUrl) {
     throw new Error('TRACKMASTER_POSTGRES_URL is required when TRACKMASTER_REPOSITORY_BACKEND=postgres.');
@@ -77,6 +166,7 @@ export function loadConfig(env = process.env) {
     apiRateLimit: parsePort(env.TRACKMASTER_API_RATE_LIMIT, 240),
     authRateWindowMs: parsePort(env.TRACKMASTER_AUTH_RATE_WINDOW_MS, 900000),
     authRateLimit: parsePort(env.TRACKMASTER_AUTH_RATE_LIMIT, 20),
+    aibryId,
     production,
     legacyUserId: 'legacy-local-user',
   };

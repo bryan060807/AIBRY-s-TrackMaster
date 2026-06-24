@@ -28,6 +28,7 @@ export function createApp({ config, repositories }) {
     keyGenerator: clientKey,
   }));
 
+  mountBrowserAuthRoutes(app, '/auth', { auth, config, repositories });
   mountApiRoutes(app, '/api', { auth, config, repositories });
   mountApiRoutes(app, '/api/v1', { auth, config, repositories });
   app.use(createErrorHandler());
@@ -61,6 +62,21 @@ function createCorsHeaders(config) {
     }
     next();
   };
+}
+
+function mountBrowserAuthRoutes(app, authPath, context) {
+  const { config } = context;
+  const authLimiter = rateLimit({
+    windowMs: config.authRateWindowMs,
+    limit: config.authRateLimit,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: clientKey,
+  });
+
+  app.use(authPath, authLimiter);
+  app.use(authPath, express.json({ limit: '16kb' }));
+  app.use(authPath, createAuthRouter(context));
 }
 
 function mountApiRoutes(app, basePath, context) {

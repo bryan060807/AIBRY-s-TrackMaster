@@ -3,6 +3,7 @@ import {
   apiFetch,
   clearLegacyAuthToken,
   getAuthToken,
+  getAibryIdLoginUrl,
   getCurrentUser,
   login,
   logout,
@@ -13,7 +14,7 @@ import {
 } from './sessionClient';
 
 export type { AuthResult, AuthUser };
-export { getAuthToken, getCurrentUser, login, logout, register };
+export { getAibryIdLoginUrl, getAuthToken, getCurrentUser, login, logout, register };
 
 export interface TrackRecord {
   id: string;

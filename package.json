@@ -9,7 +9,7 @@
     "dev:api:split": "npm --prefix trackmaster-api run dev",
     "start:windows-readiness": "powershell -ExecutionPolicy Bypass -File scripts/start-windows-readiness.ps1",
     "check:api": "node --check server/index.js && npm --prefix trackmaster-api run check && node --check scripts/postgres-rehearsal.mjs && node --check scripts/api-read-validation.mjs && node --check scripts/api-write-validation.mjs && node --check scripts/backend-switch-preflight.mjs && node --check scripts/backend-switch-report.mjs && node --check scripts/production-cutover-preflight.mjs && node --check scripts/production-cutover-report.mjs && node --check scripts/trackmaster-fedora-readiness-report.mjs && node --check scripts/trackmaster-storage-preflight.mjs && node --check scripts/trackmaster-backup-preflight.mjs && node --check scripts/trackmaster-cutover-no-go-report.mjs",
-    "test:api": "npm --prefix trackmaster-api test",
+    "test:api": "node server/runtime-env.test.cjs && npm --prefix trackmaster-api test",
     "pm2:production:start": "npm run build && pm2 start ecosystem.production.config.cjs --update-env",
     "pm2:production:stop": "pm2 stop trackmaster-api trackmaster-ui",
     "pm2:production:restart": "npm run build && pm2 restart trackmaster-api trackmaster-ui --update-env",

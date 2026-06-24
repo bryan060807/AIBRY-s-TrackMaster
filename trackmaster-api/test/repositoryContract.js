@@ -29,6 +29,8 @@ export function runRepositoryContractTests({ backendName, createContext }) {
       const publicUser = await repositories.users.findPublicById('user-1');
       assert.deepEqual(Object.keys(publicUser).sort(), ['createdAt', 'email', 'id']);
       assert.equal(await repositories.users.findPublicById('missing-user'), undefined);
+      const publicUserByEmail = await repositories.users.findPublicByEmail('UNIT@example.com');
+      assert.deepEqual(publicUserByEmail, publicUser);
 
       await assertThrowsOrRejects(
         () => repositories.users.create({
@@ -38,6 +40,54 @@ export function runRepositoryContractTests({ backendName, createContext }) {
         }),
         (err) => isDuplicateUserError(err) && err.status === 409
       );
+    });
+  });
+
+  test(`${backendName}: external identities create, find active, and mark login`, async () => {
+    await withRepositoryContext(createContext, async ({ repositories }) => {
+      await repositories.users.create({
+        id: 'external-user',
+        email: 'external@example.com',
+        passwordHash: 'hash',
+      });
+
+      assert.equal(
+        await repositories.externalIdentities.findActive({
+          providerIssuer: 'https://id.aibry.shop',
+          providerSubject: 'missing-subject',
+        }),
+        undefined
+      );
+
+      const link = await repositories.externalIdentities.createLink({
+        userId: 'external-user',
+        providerIssuer: 'https://id.aibry.shop',
+        providerSubject: 'subject-1',
+        emailAtLinkTime: 'external@example.com',
+        emailVerifiedAtLinkTime: true,
+      });
+
+      assert.ok(link.id);
+      assert.equal(link.userId, 'external-user');
+      assert.equal(link.providerIssuer, 'https://id.aibry.shop');
+      assert.equal(link.providerSubject, 'subject-1');
+      assert.equal(link.emailAtLinkTime, 'external@example.com');
+      assert.equal(link.emailVerifiedAtLinkTime, true);
+      assert.equal(link.disabledAt, null);
+
+      const found = await repositories.externalIdentities.findActive({
+        providerIssuer: 'https://id.aibry.shop',
+        providerSubject: 'subject-1',
+      });
+      assert.equal(found.id, link.id);
+
+      const loggedIn = await repositories.externalIdentities.markLogin({
+        providerIssuer: 'https://id.aibry.shop',
+        providerSubject: 'subject-1',
+        lastLoginAt: '2026-06-24T12:00:00.000Z',
+      });
+      assert.equal(loggedIn.id, link.id);
+      assert.ok(loggedIn.lastLoginAt);
     });
   });
 

@@ -17,6 +17,7 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
         '/api': 'http://127.0.0.1:3004',
+        '/auth': 'http://127.0.0.1:3004',
       },
     },
   };

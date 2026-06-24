@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mapPostgresUniqueConstraint } from './errors.js';
 import {
   mapChangedMutationResult,
@@ -10,6 +11,21 @@ import {
   mapUserRow,
   mapUserWithPasswordRow,
 } from './mappers.js';
+
+function mapExternalIdentityRow(row) {
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    providerIssuer: row.provider_issuer,
+    providerSubject: row.provider_subject,
+    emailAtLinkTime: row.email_at_link_time,
+    emailVerifiedAtLinkTime: row.email_verified_at_link_time === true,
+    linkedAt: row.linked_at,
+    lastLoginAt: row.last_login_at,
+    disabledAt: row.disabled_at,
+  };
+}
 
 const INACTIVE_MESSAGE = 'Postgres repositories are disabled unless the runtime or test harness explicitly activates them. Keep TRACKMASTER_REPOSITORY_BACKEND=sqlite until an approved cutover.';
 
@@ -29,6 +45,12 @@ export function createInactivePostgresRepositories() {
       create: inactiveRepositoryMethod('users.create'),
       findByEmailWithPassword: inactiveRepositoryMethod('users.findByEmailWithPassword'),
       findPublicById: inactiveRepositoryMethod('users.findPublicById'),
+      findPublicByEmail: inactiveRepositoryMethod('users.findPublicByEmail'),
+    },
+    externalIdentities: {
+      findActive: inactiveRepositoryMethod('externalIdentities.findActive'),
+      createLink: inactiveRepositoryMethod('externalIdentities.createLink'),
+      markLogin: inactiveRepositoryMethod('externalIdentities.markLogin'),
     },
     sessions: {
       deleteExpired: inactiveRepositoryMethod('sessions.deleteExpired'),
@@ -59,6 +81,7 @@ export function createPostgresRepositories(pool) {
 
   return {
     backend: 'postgres',
+    externalIdentities: createPostgresExternalIdentitiesRepository(pool),
     health: createPostgresHealthRepository(pool),
     users: createPostgresUsersRepository(pool),
     sessions: createPostgresSessionsRepository(pool),
@@ -107,6 +130,81 @@ function createPostgresUsersRepository(pool) {
         WHERE id = $1
       `, [id]);
       return mapUserRow(result.rows[0]);
+    },
+
+    async findPublicByEmail(email) {
+      const result = await pool.query(`
+        SELECT id, email, created_at
+        FROM users
+        WHERE lower(email) = lower($1)
+      `, [email]);
+      return mapUserRow(result.rows[0]);
+    },
+  };
+}
+
+function createPostgresExternalIdentitiesRepository(pool) {
+  async function ensureTable() {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS external_identities (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider_issuer TEXT NOT NULL,
+        provider_subject TEXT NOT NULL,
+        email_at_link_time TEXT,
+        email_verified_at_link_time BOOLEAN NOT NULL DEFAULT FALSE,
+        linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_login_at TIMESTAMPTZ,
+        disabled_at TIMESTAMPTZ,
+        metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+        UNIQUE (provider_issuer, provider_subject)
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS external_identities_user_id_idx ON external_identities (user_id)');
+    await pool.query('CREATE INDEX IF NOT EXISTS external_identities_provider_subject_idx ON external_identities (provider_issuer, provider_subject)');
+  }
+
+  return {
+    async findActive({ providerIssuer, providerSubject }) {
+      await ensureTable();
+      const result = await pool.query(`
+        SELECT *
+        FROM external_identities
+        WHERE provider_issuer = $1
+          AND provider_subject = $2
+          AND disabled_at IS NULL
+      `, [providerIssuer, providerSubject]);
+      return mapExternalIdentityRow(result.rows[0]);
+    },
+
+    async createLink({ userId, providerIssuer, providerSubject, emailAtLinkTime, emailVerifiedAtLinkTime }) {
+      await ensureTable();
+      const result = await pool.query(`
+        INSERT INTO external_identities (
+          id,
+          user_id,
+          provider_issuer,
+          provider_subject,
+          email_at_link_time,
+          email_verified_at_link_time
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `, [randomUUID(), userId, providerIssuer, providerSubject, emailAtLinkTime || null, emailVerifiedAtLinkTime === true]);
+      return mapExternalIdentityRow(result.rows[0]);
+    },
+
+    async markLogin({ providerIssuer, providerSubject, lastLoginAt }) {
+      await ensureTable();
+      const result = await pool.query(`
+        UPDATE external_identities
+        SET last_login_at = $3
+        WHERE provider_issuer = $1
+          AND provider_subject = $2
+          AND disabled_at IS NULL
+        RETURNING *
+      `, [providerIssuer, providerSubject, lastLoginAt]);
+      return mapExternalIdentityRow(result.rows[0]);
     },
   };
 }

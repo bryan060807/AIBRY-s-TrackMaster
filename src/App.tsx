@@ -13,7 +13,7 @@ import { AuthStatus } from './components/AuthStatus';
 import { AuthScreen } from './components/AuthScreen';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsOfService } from './pages/TermsOfService';
-import { getCurrentUser, login, logout, register, type AuthUser } from './lib/api';
+import { getAibryIdLoginUrl, getCurrentUser, login, logout, register, type AuthUser } from './lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 
 const THEMES = [
@@ -143,6 +143,10 @@ export default function App() {
     setAuthError(null);
   };
 
+  const handleAibryIdLogin = () => {
+    window.location.assign(getAibryIdLoginUrl());
+  };
+
   // ROUTING LOGIC
   if (path === '/privacy') return <PrivacyPolicy />;
   if (path === '/tos') return <TermsOfService />;
@@ -159,6 +163,7 @@ export default function App() {
     return (
       <AuthScreen
         onLogin={handleAuth}
+        onAibryIdLogin={handleAibryIdLogin}
         accentClass={accent.class}
         accentBg={accent.bg}
         loading={authLoading}

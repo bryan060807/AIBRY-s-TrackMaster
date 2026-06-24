@@ -22,6 +22,43 @@ Health endpoints:
 - `/api/readiness` and `/api/v1/readiness`: repository and local storage access
   checks, plus the active host, port, production flag, and repository backend.
 
+## AIBRY ID
+
+TrackMaster can use AIBRY ID as the primary browser login while preserving
+legacy email/password auth and JWT fallback. Browser login must start at the
+TrackMaster app origin:
+
+```txt
+/auth/aibry-id/login
+```
+
+The public provider redirect URI must also use the app origin, not the API
+origin:
+
+```txt
+https://trackmaster.aibry.shop/auth/aibry-id/callback
+```
+
+Production provider registration should be a public PKCE client with scopes
+`openid profile email` and no client secret when matching the TaskMaster public
+pattern.
+
+Non-secret production env names:
+
+- `TRACKMASTER_AIBRY_ID_ENABLED`
+- `TRACKMASTER_AIBRY_ID_DEV_ONLY`
+- `TRACKMASTER_AIBRY_ID_ISSUER`
+- `TRACKMASTER_AIBRY_ID_CLIENT_ID`
+- `TRACKMASTER_AIBRY_ID_REDIRECT_URI`
+- `TRACKMASTER_AIBRY_ID_SCOPES`
+- `TRACKMASTER_AIBRY_ID_SUCCESS_REDIRECT`
+- `TRACKMASTER_AIBRY_ID_LINK_REQUIRED_REDIRECT`
+- `TRACKMASTER_AIBRY_ID_SELF_PROVISIONING`
+- `TRACKMASTER_AIBRY_ID_STATE_COOKIE_SECRET`
+
+When `TRACKMASTER_AIBRY_ID_DEV_ONLY=false`, issuer, redirect URI, and absolute
+success redirects must be explicit HTTPS URLs and must not use loopback hosts.
+
 Future Fedora Postgres activation env:
 
 ```bash

@@ -68,6 +68,24 @@ function initializeSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+
+    CREATE TABLE IF NOT EXISTS external_identities (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      provider_issuer TEXT NOT NULL,
+      provider_subject TEXT NOT NULL,
+      email_at_link_time TEXT,
+      email_verified_at_link_time INTEGER NOT NULL DEFAULT 0,
+      linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_login_at TEXT,
+      disabled_at TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      UNIQUE (provider_issuer, provider_subject),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_external_identities_user_id ON external_identities(user_id);
+    CREATE INDEX IF NOT EXISTS idx_external_identities_provider_subject ON external_identities(provider_issuer, provider_subject);
   `);
 }
 

@@ -87,6 +87,16 @@ export function getAuthToken() {
   return getStoredToken();
 }
 
+export function getAibryIdLoginUrl() {
+  return '/auth/aibry-id/login';
+}
+
+export function startAibryIdLogin() {
+  if (typeof window !== 'undefined') {
+    window.location.assign(getAibryIdLoginUrl());
+  }
+}
+
 export async function logout() {
   try {
     await apiFetch('/api/auth/logout', { method: 'POST' });

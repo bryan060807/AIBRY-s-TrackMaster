@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Activity, Lock, LogIn, UserPlus } from 'lucide-react';
+import { Activity, Lock, LogIn, ShieldCheck, UserPlus } from 'lucide-react';
 
 interface AuthScreenProps {
+  onAibryIdLogin?: () => void;
   onLogin: (email: string, password: string, mode: 'login' | 'register') => Promise<void>;
   accentClass: string;
   accentBg: string;
@@ -11,6 +12,7 @@ interface AuthScreenProps {
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   onLogin,
+  onAibryIdLogin,
   accentClass,
   accentBg,
   loading = false,
@@ -44,6 +46,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             {error}
           </div>
         )}
+
+        {onAibryIdLogin && (
+          <button
+            type="button"
+            onClick={onAibryIdLogin}
+            disabled={loading}
+            className={`mb-5 flex w-full items-center justify-center gap-2 rounded-sm px-4 py-3 text-xs font-bold uppercase tracking-widest text-black transition-opacity disabled:opacity-50 ${accentBg}`}
+          >
+            <ShieldCheck size={16} />
+            Continue with AIBRY ID
+          </button>
+        )}
+
+        <div className="mb-5 flex items-center gap-3 text-[9px] uppercase tracking-widest text-zinc-600">
+          <span className="h-px flex-1 bg-zinc-800" />
+          <span>Legacy Email</span>
+          <span className="h-px flex-1 bg-zinc-800" />
+        </div>
 
         <div className="space-y-3">
           <label className="block text-[10px] uppercase tracking-widest text-zinc-500">

@@ -1,3 +1,4 @@
+import { createExternalIdentitiesRepository } from './external-identities.js';
 import { createHealthRepository } from './health.js';
 import { createPresetsRepository } from './presets.js';
 import { createSessionsRepository } from './sessions.js';
@@ -7,6 +8,7 @@ import { createUsersRepository } from './users.js';
 export function createSqliteRepositories(db) {
   return {
     backend: 'sqlite',
+    externalIdentities: createExternalIdentitiesRepository(db),
     health: createHealthRepository(db),
     presets: createPresetsRepository(db),
     sessions: createSessionsRepository(db),

@@ -1,3 +1,10 @@
+const { loadRuntimeEnv } = require('./server/runtime-env.cjs');
+
+loadRuntimeEnv({
+  projectRoot: __dirname,
+  fileName: '.env.production.local',
+});
+
 function isPlaceholderValue(value) {
   return /REPLACE_|REPLACE-|CHANGE_ME|CHANGE-ME|<approved|placeholder/i.test(value);
 }
@@ -65,6 +72,16 @@ module.exports = {
         TRACKMASTER_AUTH_RATE_WINDOW_MS: readOptionalEnv('TRACKMASTER_AUTH_RATE_WINDOW_MS', '900000'),
         TRACKMASTER_AUTH_RATE_LIMIT: readOptionalEnv('TRACKMASTER_AUTH_RATE_LIMIT', '20'),
         TRACKMASTER_UPLOAD_LIMIT: readOptionalEnv('TRACKMASTER_UPLOAD_LIMIT', '120mb'),
+        TRACKMASTER_AIBRY_ID_ENABLED: readOptionalEnv('TRACKMASTER_AIBRY_ID_ENABLED', 'false'),
+        TRACKMASTER_AIBRY_ID_DEV_ONLY: readOptionalEnv('TRACKMASTER_AIBRY_ID_DEV_ONLY', 'true'),
+        TRACKMASTER_AIBRY_ID_ISSUER: readOptionalEnv('TRACKMASTER_AIBRY_ID_ISSUER', 'http://127.0.0.1:4010'),
+        TRACKMASTER_AIBRY_ID_CLIENT_ID: readOptionalEnv('TRACKMASTER_AIBRY_ID_CLIENT_ID', 'trackmaster-private-loopback'),
+        TRACKMASTER_AIBRY_ID_REDIRECT_URI: readOptionalEnv('TRACKMASTER_AIBRY_ID_REDIRECT_URI', 'http://127.0.0.1:3000/auth/aibry-id/callback'),
+        TRACKMASTER_AIBRY_ID_SCOPES: readOptionalEnv('TRACKMASTER_AIBRY_ID_SCOPES', 'openid profile email'),
+        TRACKMASTER_AIBRY_ID_SUCCESS_REDIRECT: readOptionalEnv('TRACKMASTER_AIBRY_ID_SUCCESS_REDIRECT', '/'),
+        TRACKMASTER_AIBRY_ID_LINK_REQUIRED_REDIRECT: readOptionalEnv('TRACKMASTER_AIBRY_ID_LINK_REQUIRED_REDIRECT', ''),
+        TRACKMASTER_AIBRY_ID_SELF_PROVISIONING: readOptionalEnv('TRACKMASTER_AIBRY_ID_SELF_PROVISIONING', 'false'),
+        TRACKMASTER_AIBRY_ID_STATE_COOKIE_SECRET: readOptionalEnv('TRACKMASTER_AIBRY_ID_STATE_COOKIE_SECRET', ''),
         CORS_ORIGIN: readOptionalEnv('CORS_ORIGIN', ''),
       },
     },
@@ -82,6 +99,7 @@ module.exports = {
         NODE_ENV: 'production',
         HOST: uiHost,
         PORT: uiPort,
+        TRACKMASTER_API_ORIGIN: readOptionalEnv('TRACKMASTER_API_ORIGIN', `http://${apiHost}:${apiPort}`),
       },
     },
   ],
